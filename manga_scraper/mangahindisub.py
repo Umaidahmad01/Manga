@@ -9,32 +9,28 @@ import logging
 import getpass
 import sys
 import re
-from config import MONGO_URI, DB_NAME, LOG_CHANNEL_ID, OWNER_ID, API_ID, API_HASH
-from telethon.sync import TelegramClient
-from telethon.errors import SessionPasswordNeededError
+import telegram
+from config import MONGO_URI, DB_NAME, LOG_CHANNEL_ID, OWNER_ID, BOT_TOKEN
 
 class MangaScraper:
-    def __init__(self, log_file="manga_scraper.log", session_name="manga_session"):
-        logging.basicConfig(filename=log_file, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    def __init__(self, log_file="manga_scraper.log"):
+        # Logging setup
+        logging.basicConfig(
+            filename=log_file,
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s"
+        )
         self.logger = logging.getLogger()
         self.logger.info("MangaScraper initialized")
+        
+        # MongoDB setup
         self.client = pymongo.MongoClient(MONGO_URI)
         self.db = self.client[DB_NAME]
         self.create_collections()
-        self.telegram_client = TelegramClient(session_name, API_ID, API_HASH)
-        self.start_telegram_client()
 
-    def start_telegram_client(self):
-        self.telegram_client.start()
-        if not self.telegram_client.is_user_authorized():
-            phone = input("Enter your phone number (e.g., +91XXXXXXXXXX): ")
-            self.telegram_client.send_code_request(phone)
-            try:
-                self.telegram_client.sign_in(phone, input("Enter the code you received: "))
-            except SessionPasswordNeededError:
-                self.telegram_client.sign_in(password=getpass.getpass("Enter your 2FA password: "))
-        self.logger.info("Telegram client started")
-        self.send_log_to_channel("MangaScraper initialized and Telegram client started")
+        # Telegram Bot setup
+        self.bot = telegram.Bot(token=BOT_TOKEN)
+        self.send_log_to_channel("MangaScraper initialized")
 
     def create_collections(self):
         if "manga_downloads" not in self.db.list_collection_names():
@@ -45,7 +41,7 @@ class MangaScraper:
 
     def send_log_to_channel(self, message):
         try:
-            self.telegram_client.send_message(int(LOG_CHANNEL_ID), message)
+            self.bot.send_message(chat_id=LOG_CHANNEL_ID, text=message)
             self.logger.info(f"Log sent to Telegram {LOG_CHANNEL_ID}: {message}")
         except Exception as e:
             self.logger.error(f"Failed to send log to Telegram: {e}")
@@ -57,6 +53,7 @@ class MangaScraper:
             self.send_log_to_channel(f"Unauthorized attempt to add user by {requester_id}")
             print("Only the owner can add new users.")
             return False
+        
         user_data = {"username": username, "password": password}
         try:
             self.db.auth_users.insert_one(user_data)
@@ -95,10 +92,12 @@ class MangaScraper:
             self.send_log_to_channel("No authorized users found")
             print("No authorized users found. Please add a user first using /add_auth.")
             return None
+        
         attempts = 3
         while attempts > 0:
             username = input("Enter username: ")
             password = getpass.getpass("Enter password: ")
+            
             if username in auth_users and auth_users[username] == password:
                 self.logger.info(f"User '{username}' authenticated successfully")
                 self.send_log_to_channel(f"User '{username}' authenticated successfully")
@@ -109,21 +108,26 @@ class MangaScraper:
                 self.logger.warning(f"Authentication failed for user '{username}'. Attempts left: {attempts}")
                 self.send_log_to_channel(f"Authentication failed for '{username}'. Attempts left: {attempts}")
                 print(f"Wrong username or password. {attempts} attempts left.")
+        
         self.logger.error("Authentication failed: Max attempts reached")
         self.send_log_to_channel("Authentication failed: Max attempts reached")
         print("Too many failed attempts. Access denied.")
         return None
 
     def download_images_to_pdf(self, url, output_pdf_name):
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
         self.logger.info(f"Attempting to access URL: {url}")
         self.send_log_to_channel(f"Attempting to access URL: {url}")
         response = requests.get(url, headers=headers)
+        
         if response.status_code != 200:
             self.logger.error(f"Failed to get response from {url}. Status code: {response.status_code}")
             self.send_log_to_channel(f"Failed to get response from {url}")
             print("URL se response nahi mila. Check kar link sahi hai ya nahi.")
             return
+        
         soup = BeautifulSoup(response.content, 'html.parser')
         img_tags = soup.find_all('img', class_=re.compile('wp-manga-chapter-img|img-responsive|lazyload'))
         if not img_tags:
@@ -131,17 +135,21 @@ class MangaScraper:
             self.send_log_to_channel(f"No manga images found on {url}")
             print("Koi manga images nahi mili webpage pe.")
             return
+        
         temp_folder = "temp_images"
         if not os.path.exists(temp_folder):
             os.makedirs(temp_folder)
             self.logger.info(f"Created temporary folder: {temp_folder}")
             self.send_log_to_channel(f"Created temporary folder: {temp_folder}")
+        
         image_paths = []
         base_url = url
+        
         for idx, img in enumerate(img_tags):
             img_url = img.get('src') or img.get('data-src')
             if not img_url:
                 continue
+            
             img_url = urljoin(base_url, img_url)
             try:
                 self.logger.info(f"Downloading image: {img_url}")
@@ -163,6 +171,7 @@ class MangaScraper:
                 self.logger.error(f"Error downloading {img_url}: {e}")
                 self.send_log_to_channel(f"Error downloading {img_url}: {e}")
                 print(f"Error downloading {img_url}: {e}")
+        
         if image_paths:
             self.logger.info(f"Creating PDF: {output_pdf_name}")
             self.send_log_to_channel(f"Creating PDF: {output_pdf_name}")
@@ -173,6 +182,7 @@ class MangaScraper:
             self.send_log_to_channel(f"PDF created: {output_pdf_name}")
             print(f"PDF ban gaya: {output_pdf_name}")
             self.add_download(url, output_pdf_name)
+            
             for img_path in image_paths:
                 os.remove(img_path)
                 self.logger.info(f"Deleted temporary file: {img_path}")
@@ -186,13 +196,14 @@ class MangaScraper:
             print("Koi image download nahi hui, PDF nahi banega.")
 
     def close(self):
-        self.telegram_client.disconnect()
         self.client.close()
-        self.logger.info("MongoDB and Telegram connections closed")
+        self.logger.info("MongoDB connection closed")
         self.send_log_to_channel("Connections closed")
 
+# Usage with command-line argument support
 if __name__ == "__main__":
     scraper = MangaScraper()
+    
     if len(sys.argv) > 1:
         if sys.argv[1] == "/add_auth":
             if len(sys.argv) != 4:
@@ -206,6 +217,7 @@ if __name__ == "__main__":
                 scraper.add_auth_user(username, password, authenticated_user)
             scraper.close()
             exit()
+        
         elif sys.argv[1] == "/download":
             if len(sys.argv) < 3 or "-n" not in sys.argv:
                 print("Usage: python mangahindisub_scraper.py /download <url> -n <new_file_name>")
@@ -227,17 +239,21 @@ if __name__ == "__main__":
             scraper.download_images_to_pdf(url, new_file_name)
             scraper.close()
             exit()
+    
     authenticated_user = scraper.authenticate()
     if not authenticated_user:
         scraper.close()
         exit()
+    
     manga_url = input("Manga page ka URL daal: ")
     pdf_name = input("PDF ka naam kya rakhna hai (e.g., manga.pdf): ")
     if not pdf_name.endswith('.pdf'):
         pdf_name += '.pdf'
     scraper.download_images_to_pdf(manga_url, pdf_name)
+    
     downloads = scraper.get_all_downloads()
     print("\nDatabase mein entries:")
     for download in downloads:
         print(f"ID: {download['_id']}, URL: {download['url']}, PDF: {download['pdf_name']}, Time: {download['timestamp']}")
+    
     scraper.close()
