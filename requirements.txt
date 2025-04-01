@@ -1,8 +1,8 @@
-img2pdf==0.4.3
+
 opencv-python
 tqdm==4.62.3
 requests
 beautifulsoup4
 img2pdf
 pymongo
-python-telegram-bot
+python-telegram-bot==13.15  # Specific version for compatibility
