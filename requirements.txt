@@ -5,4 +5,4 @@ requests
 beautifulsoup4
 img2pdf
 pymongo
-telethon
+python-telegram-bot
