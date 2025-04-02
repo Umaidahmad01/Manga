@@ -1,4 +1,3 @@
-# mangahindisub_scraper.py (Telegram Bot Version)
 import requests
 from bs4 import BeautifulSoup
 import os
