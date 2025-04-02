@@ -1,1 +1,1 @@
-worker: python mangahindisub_scraper.py
+worker: python3 main.py
