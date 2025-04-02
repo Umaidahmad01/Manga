@@ -1,3 +1,4 @@
+# mangahindisub_scraper.py (Telegram Bot Version)
 import requests
 from bs4 import BeautifulSoup
 import os
@@ -7,7 +8,7 @@ import img2pdf
 from urllib.parse import urljoin
 import logging
 import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler
 from config import MONGO_URI, DB_NAME, LOG_CHANNEL_ID, OWNER_ID, BOT_TOKEN
 
 class MangaScraper:
@@ -137,7 +138,6 @@ class MangaScraper:
         self.logger.info("MongoDB connection closed")
         self.send_log_to_channel("Connections closed")
 
-    # Telegram Bot Handlers
     def start(self, update, context):
         update.message.reply_text("Welcome to MangaScraper Bot! Use /add_auth <username> <password> or /download <url> <pdf_name>")
 
@@ -164,7 +164,6 @@ class MangaScraper:
         if not auth_users:
             update.message.reply_text("No authorized users found. Add a user first with /add_auth.")
             return
-        # Simple check for auth (assuming OWNER_ID can bypass for simplicity)
         if user_id != OWNER_ID and user_id not in [str(u) for u in auth_users.keys()]:
             update.message.reply_text("You are not authorized to download.")
             return
@@ -182,5 +181,5 @@ class MangaScraper:
 
 if __name__ == "__main__":
     scraper = MangaScraper()
-    scraper.updater.idle()  # Keep bot running
+    scraper.updater.idle()
     scraper.close()
